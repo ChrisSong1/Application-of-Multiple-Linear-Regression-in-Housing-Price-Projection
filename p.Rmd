@@ -1,0 +1,371 @@
+---
+title: "sta302"
+output: html_document
+date: "2024-07-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+```{r}
+#installing necessary packages for analysis
+install.packages("leaps")
+install.packages("tidyverse")
+install.packages("MASS")
+install.packages("car")
+
+library(tidyverse)
+library(leaps)
+library(MASS)
+library(car)
+```
+```{r}
+# Load the dataset
+dataset <- read.csv("AmesHousing.csv")
+selected_columns <- dataset[, c("Lot.Frontage", "Gr.Liv.Area", "Full.Bath",
+"Bedroom.AbvGr","Garage.Area", "Wood.Deck.SF", "Lot.Config", "House.Style",
+"Total.Bsmt.SF", "Half.Bath", "SalePrice")]
+data_frame <- data.frame(selected_columns)
+```
+
+```{r}
+# Demonstrate whether some predictors have null values
+missing_values <- colSums(is.na(data_frame)) > 0
+
+print(missing_values)
+```
+
+```{r}
+# Process the null values by replacing with the average data
+data_frame$Lot.Frontage[is.na(data_frame$Lot.Frontage)] <-
+  mean(data_frame$Lot.Frontage, na.rm = TRUE)
+data_frame$Garage.Area[is.na(data_frame$Garage.Area)] <-
+  mean(data_frame$Garage.Area, na.rm = TRUE)
+data_frame$Total.Bsmt.SF[is.na(data_frame$Total.Bsmt.SF)] <-
+  mean(data_frame$Total.Bsmt.SF, na.rm = TRUE)
+```
+
+```{r}
+# Categorical variables processing
+data_frame$Full.Bath <- as.factor(data_frame$Full.Bath)
+data_frame$Half.Bath <- as.factor(data_frame$Half.Bath)
+data_frame$Bedroom.AbvGr <- as.factor(data_frame$Bedroom.AbvGr)
+
+# Set the random number
+set.seed(9089123)
+
+# Train and validation dataset split
+index <- sample(nrow(data_frame), nrow(data_frame) * 0.8)
+clean_data <- data_frame[index, ]
+validation_data <- data_frame[-index, ]
+```
+
+```{r}
+# Base model training
+fit_full <- lm(SalePrice ~ Lot.Frontage + Gr.Liv.Area + Full.Bath +
+   Bedroom.AbvGr + Garage.Area + Wood.Deck.SF + Lot.Config + House.Style +
+   Total.Bsmt.SF + Half.Bath, data = clean_data)
+
+n = nrow(clean_data)
+```
+
+```{r}
+# Summary of train and validation dataset
+summary(clean_data)
+summary(validation_data)
+dim(clean_data)
+dim(validation_data)
+```
+
+```{r}
+# Summary of the initial model
+summary(fit_full)
+```
+```{r}
+# Some plots analyzing the training dataset
+par(mfrow = c(4,2))
+
+hist(clean_data[,c(2)], main = "above-ground living space",
+xlab = "above-ground living space")
+hist(clean_data[,c(5)], main = "area of garage", xlab = "area of garage")
+boxplot(clean_data[,c(6)], main = "deck surface area")
+boxplot(clean_data[,c(9)], main = "basement area")
+hist(clean_data$SalePrice, main = "housing price", xlab = "housing price")
+plot(clean_data$Total.Bsmt.SF, clean_data$SalePrice,
+main = "Scatter Plot of housing price and basement area",
+xlab = "basement area", ylab = "housing price")
+
+plot(clean_data$Garage.Area, clean_data$SalePrice, main =
+   "Scatter Plot of housing price and area of garage",
+     xlab = "area of garage",
+     ylab = "housing price")
+```
+```{r}
+# Plot for checking the assumptions
+par(mfrow = c(2, 2))
+plot(fit_full, which = c(1, 2, 3, 4))
+```
+```{r}
+# Apply Box-Cox transformation
+boxcox_result <- boxcox(fit_full, lambda = seq(-2, 2, 0.1))
+
+# Find the lambda that maximizes log-likelihood
+lambda_optimal <- boxcox_result$x[which.max(boxcox_result$y)]
+
+# Transform SalePrice using the optimal lambda
+clean_data$SalePrice<- clean_data$SalePrice^lambda_optimal
+
+# Fit the model with the transformed SalePrice
+fit_transformed <- lm(SalePrice~., data = clean_data)
+```
+```{r}
+# Check the assumption after the box-cox transformation
+par(mfrow = c(2, 2))
+plot(fit_transformed, which = c(1, 2, 3, 4))
+```
+```{r}
+# Outlier diagnostic
+sresids = rstandard(fit_transformed)
+hats = hatvalues(fit_transformed)
+
+par(mfrow=c(2, 2))
+plot(sresids,
+     xlab="Observation number",
+     ylab = "Standardized residuals")
+text(sresids - .4, labels=1:n,
+     col="cadetblue", cex=.5)
+boxplot(sresids, ylab = "Standardized residuals")
+
+plot(hats,
+     xlab="Observation number",
+     ylab = "Hat values")
+text(hats -.01, labels=1:n,
+     col="cadetblue", cex=.5)
+boxplot(hats, ylab = "Hat values")
+```
+```{r}
+# Outlier diagnostic
+dbeta_im = abs(dfbetas(fit_transformed)[, 2])
+dffits_im = abs(dffits(fit_transformed))
+
+par(mfrow=c(2, 2))
+plot(dbeta_im,
+     xlab="Observation number",
+     ylab = "DFBETA values")
+text(dbeta_im - .1, labels=1:100,
+     col="cadetblue", cex=.5)
+boxplot(dbeta_im, ylab = "DFBETA values")
+
+plot(dffits_im,
+     xlab="Observation number",
+     ylab = "DFFITS values")
+text(dffits_im - .1, labels=1:100,
+     col="cadetblue", cex=.5)
+boxplot(dffits_im, ylab = "DFFITS values")
+```
+```{r}
+sresids = rstandard(fit_transformed)
+hats = hatvalues(fit_transformed)
+cook_dist = cooks.distance(fit_transformed)
+
+plot(hats, cook_dist, main = "Relationship between Hats and Cook's Distance",
+     xlab = "Hat Values", ylab = "Cook's Distance", col = "cadetblue", pch = 16)
+
+plot(sresids, hats,
+main = "Relationship between Standardized residuals and Hats",
+xlab = "Standardized residuals Values", ylab = "Hats Value",
+col = "cadetblue", pch = 16)
+
+plot(sresids, cook_dist,
+main = "Relationship between Standardized residuals and Cook Distance",
+xlab = "Standardized residuals Values", ylab = "Cook Distance",
+col = "cadetblue", pch = 16)
+
+```
+```{r}
+# Using all subset selection to create candidate models
+fit_subsets <- regsubsets(SalePrice ~ ., data = clean_data, nvmax = 9)
+summary(fit_subsets)
+```
+```{r}
+# Construct each model (includes all levels of selected categorical predictor)
+model_5<- lm(SalePrice~Gr.Liv.Area+Full.Bath+Garage.Area+
+  Wood.Deck.SF,data=clean_data)
+
+model_6<- lm(SalePrice~Gr.Liv.Area+Full.Bath+Garage.Area+
+  Wood.Deck.SF+Total.Bsmt.SF, data=clean_data)
+
+model_7<- lm(SalePrice~Gr.Liv.Area+Full.Bath+Garage.Area+
+  Wood.Deck.SF+Total.Bsmt.SF+Half.Bath, data=clean_data)
+
+model_8<- lm(SalePrice~Gr.Liv.Area+Full.Bath+Garage.Area+
+  Wood.Deck.SF+Lot.Config+Total.Bsmt.SF+Half.Bath, data=clean_data)
+
+model_9<- lm(SalePrice ~ Gr.Liv.Area+Full.Bath+Bedroom.AbvGr+Garage.Area+
+  Wood.Deck.SF+Total.Bsmt.SF+Half.Bath, data=clean_data)
+```
+
+```{r}
+#Checking Assumptions for model_5
+par(mfrow = c(2, 2))
+plot(model_5, which = c(1, 2, 3, 4))
+
+#Checking Assumptions for model_6
+par(mfrow = c(2, 2))
+plot(model_6, which = c(1, 2, 3, 4))
+
+#Checking Assumptions for model_7
+par(mfrow = c(2, 2))
+plot(model_7, which = c(1, 2, 3, 4))
+
+#Checking Assumptions for model_8
+par(mfrow = c(2, 2))
+plot(model_8, which = c(1, 2, 3, 4))
+
+#Checking Assumptions for model_9
+par(mfrow = c(2, 2))
+plot(model_9, which = c(1, 2, 3, 4))
+
+```
+```{r}
+#Proceed by calculating AIC, BIC, F and adj R^2 for each model
+
+#model_5
+model_5_aic<- extractAIC(model_5,k=2)[2]
+model_5_bic<- extractAIC(model_5, k=log(n))[2]
+summary_model_5 <- summary(model_5)
+model_5_fstat<- summary_model_5$fstatistic[1]
+model_5_adj_rsquared<- summary_model_5$adj.r.squared
+
+#model_6
+model_6_aic<- extractAIC(model_6,k=2)[2]
+model_6_bic<- extractAIC(model_6, k=log(n))[2]
+summary_model_6 <- summary(model_6)
+model_6_fstat<- summary_model_6$fstatistic[1]
+model_6_adj_rsquared<- summary_model_6$adj.r.squared
+
+#model_7
+model_7_aic<- extractAIC(model_7,k=2)[2]
+model_7_bic<- extractAIC(model_7, k=log(n))[2]
+summary_model_7 <- summary(model_7)
+model_7_fstat<- summary_model_7$fstatistic[1]
+model_7_adj_rsquared<- summary_model_7$adj.r.squared
+
+#model_8
+model_8_aic<- extractAIC(model_8,k=2)[2]
+model_8_bic<- extractAIC(model_8, k=log(n))[2]
+summary_model_8 <- summary(model_8)
+model_8_fstat<- summary_model_8$fstatistic[1]
+model_8_adj_rsquared<- summary_model_8$adj.r.squared
+
+#model_9
+model_9_aic<- extractAIC(model_9,k=2)[2]
+model_9_bic<- extractAIC(model_9, k=log(n))[2]
+summary_model_9 <- summary(model_9)
+model_9_fstat<- summary_model_9$fstatistic[1]
+model_9_adj_rsquared<- summary_model_9$adj.r.squared
+```
+
+```{r}
+# Compute the validation MSE values
+pred_test_5 = predict(model_5, validation_data)
+pred_test_6 = predict(model_6, validation_data)
+pred_test_7 = predict(model_7, validation_data)
+pred_test_8 = predict(model_8, validation_data)
+pred_test_9 = predict(model_9, validation_data)
+y_test = validation_data$SalePrice
+mse_model_5 = mean((y_test - pred_test_5)^2)
+mse_model_6 = mean((y_test - pred_test_6)^2)
+mse_model_7 = mean((y_test - pred_test_7)^2)
+mse_model_8 = mean((y_test - pred_test_8)^2)
+mse_model_9 = mean((y_test - pred_test_9)^2)
+```
+
+```{r}
+#table summary
+model_data <- data.frame(
+  Model = c("Model 5", "Model 6", "Model 7", "Model 8", "Model 9"),
+  AIC = c(model_5_aic, model_6_aic, model_7_aic, model_8_aic, model_9_aic),
+  BIC = c(model_5_bic, model_6_bic, model_7_bic, model_8_bic, model_9_bic),
+  F_Statistic = c(model_5_fstat, model_6_fstat, model_7_fstat, model_8_fstat,
+  model_9_fstat),
+  Adj_Rsquared = c(model_5_adj_rsquared, model_6_adj_rsquared,
+  model_7_adj_rsquared, model_8_adj_rsquared, model_9_adj_rsquared),
+  Validation_MSE = c(mse_model_5,mse_model_6,mse_model_7,mse_model_8,
+  mse_model_9)
+)
+
+# Print the table using kable
+knitr::kable(model_data, "pipe")
+```
+```{r}
+#summary of the final model we chose
+summary(model_9)
+```
+
+```{r}
+# Outlier diagnostic
+sresids = rstandard(model_9)
+hats = hatvalues(model_9)
+
+par(mfrow=c(2, 2))
+plot(sresids,
+     xlab="Observation number",
+     ylab = "Standardized residuals")
+text(sresids - .4, labels=1:n,
+     col="cadetblue", cex=.5)
+boxplot(sresids, ylab = "Standardized residuals")
+
+plot(hats,
+     xlab="Observation number",
+     ylab = "Hat values")
+text(hats -.01, labels=1:n,
+     col="cadetblue", cex=.5)
+boxplot(hats, ylab = "Hat values")
+```
+```{r}
+dbeta_im = abs(dfbetas(model_9)[, 2])
+dffits_im = abs(dffits(model_9))
+
+par(mfrow=c(2, 2))
+plot(dbeta_im,
+     xlab="Observation number",
+     ylab = "DFBETA values")
+text(dbeta_im - .1, labels=1:100,
+     col="cadetblue", cex=.5)
+boxplot(dbeta_im, ylab = "DFBETA values")
+
+plot(dffits_im,
+     xlab="Observation number",
+     ylab = "DFFITS values")
+text(dffits_im - .1, labels=1:100,
+     col="cadetblue", cex=.5)
+boxplot(dffits_im, ylab = "DFFITS values")
+```
+```{r}
+vif(model_9)
+```
+
+```{r}
+summary(model_9)
+```
+
